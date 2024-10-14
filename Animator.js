@@ -3,8 +3,9 @@ let objModel, selectedObject;
 let animationData = {};
 let materialMode = 'shaded';
 let currentFrame = 0;
-let totalFrames = 120;
+let totalFrames = 180;
 let isAnimating = false;
+let isLooping = false;
 
 const materialsMap = new Map();
 
@@ -146,7 +147,6 @@ function createAnimationControls() {
     controlsDiv.style.zIndex = '9999';
     document.body.appendChild(controlsDiv);
 
-
     function createIconButton(iconSrc, title, onClick) {
         const button = document.createElement('button');
         button.style.background = 'none';
@@ -163,7 +163,6 @@ function createAnimationControls() {
         button.appendChild(icon);
         button.onclick = onClick;
 
-
         button.onmouseover = () => icon.style.opacity = '0.7';
         button.onmouseout = () => icon.style.opacity = '1';
 
@@ -179,9 +178,52 @@ function createAnimationControls() {
         }
     });
 
+    const exportButton = createIconButton('download.png', 'Export Animation', exportAnimation);
+
     controlsDiv.appendChild(playButton);
     controlsDiv.appendChild(stopButton);
     controlsDiv.appendChild(nextFrameButton);
+    controlsDiv.appendChild(exportButton);
+
+    const loopCheckbox = document.createElement('input');
+    loopCheckbox.type = 'checkbox';
+    loopCheckbox.id = 'loopCheckbox';
+    loopCheckbox.style.marginLeft = '10px';
+    loopCheckbox.addEventListener('change', (event) => {
+        isLooping = event.target.checked;
+    });
+
+    const loopLabel = document.createElement('label');
+    loopLabel.htmlFor = 'loopCheckbox';
+    loopLabel.innerText = 'Loop';
+    loopLabel.style.marginLeft = '5px';
+
+    controlsDiv.appendChild(loopCheckbox);
+    controlsDiv.appendChild(loopLabel);
+}
+
+function exportAnimation() {
+    if (!selectedObject) {
+        alert('Please select an object to export.');
+        return;
+    }
+
+    const animationJson = {
+        animationData: animationData,
+        totalFrames: totalFrames,
+    };
+
+    const jsonStr = JSON.stringify(animationJson, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'animation.json';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
 }
 
 function updateMaterialMode() {
@@ -217,8 +259,19 @@ function loadModelWithMaterial() {
         objLoader.load('sheep.obj', function (obj) {
             objModel = obj;
 
+            const nameCount = {};
+
             obj.traverse(function (child) {
                 if (child.isMesh) {
+
+                    let name = child.name;
+                    if (nameCount[name]) {
+                        nameCount[name]++;
+                        child.name = `${name}_${nameCount[name]}`;
+                    } else {
+                        nameCount[name] = 1;
+                    }
+
                     child.material = materials.materials[child.material.name] || child.material;
                     child.material.transparent = true;
                     child.material.opacity = 1;
@@ -272,7 +325,7 @@ function saveKeyframe(object) {
         position: { x: object.position.x, y: object.position.y, z: object.position.z },
         rotation: { x: object.rotation.x, y: object.rotation.y, z: object.rotation.z },
         scale: { x: object.scale.x, y: object.scale.y, z: object.scale.z },
-        object: selectedObject
+        object: object
     };
 
     console.log("Saving keyframe for", object.name, keyframe);
@@ -307,35 +360,37 @@ let targetRotation = new THREE.Vector3();
 let targetScale = new THREE.Vector3();
 
 function updateObjectTransformations(currentFrame) {
-    if (!selectedObject) return;
+    for (const objectName in animationData) {
+        const animatedObject = scene.getObjectByName(objectName);
+        if (!animatedObject) continue;
 
-    const positionKeyframes = animationData[selectedObject.name]?.position || [];
-    const rotationKeyframes = animationData[selectedObject.name]?.rotation || [];
-    const scaleKeyframes = animationData[selectedObject.name]?.scale || [];
-    const obj = animationData[selectedObject.name]?.object || [];
+        const positionKeyframes = animationData[objectName]?.position || [];
+        const rotationKeyframes = animationData[objectName]?.rotation || [];
+        const scaleKeyframes = animationData[objectName]?.scale || [];
 
-    const { prevKeyframe: prevPos, nextKeyframe: nextPos } = findSurroundingKeyframes(positionKeyframes, currentFrame);
-    const { prevKeyframe: prevRot, nextKeyframe: nextRot } = findSurroundingKeyframes(rotationKeyframes, currentFrame);
-    const { prevKeyframe: prevScale, nextKeyframe: nextScale } = findSurroundingKeyframes(scaleKeyframes, currentFrame);
+        const { prevKeyframe: prevPos, nextKeyframe: nextPos } = findSurroundingKeyframes(positionKeyframes, currentFrame);
+        if (prevPos && nextPos) {
+            animatedObject.position.x = interpolateValue(prevPos.x, nextPos.x, prevPos.frame, nextPos.frame, currentFrame);
+            animatedObject.position.y = interpolateValue(prevPos.y, nextPos.y, prevPos.frame, nextPos.frame, currentFrame);
+            animatedObject.position.z = interpolateValue(prevPos.z, nextPos.z, prevPos.frame, nextPos.frame, currentFrame);
+        }
 
-    if (prevPos && nextPos) {
-        selectedObject.position.x = interpolateValue(prevPos.x, nextPos.x, prevPos.frame, nextPos.frame, currentFrame);
-        selectedObject.position.y = interpolateValue(prevPos.y, nextPos.y, prevPos.frame, nextPos.frame, currentFrame);
-        selectedObject.position.z = interpolateValue(prevPos.z, nextPos.z, prevPos.frame, nextPos.frame, currentFrame);
-    }
+        const { prevKeyframe: prevRot, nextKeyframe: nextRot } = findSurroundingKeyframes(rotationKeyframes, currentFrame);
+        if (prevRot && nextRot) {
+            animatedObject.rotation.x = interpolateValue(prevRot.x, nextRot.x, prevRot.frame, nextRot.frame, currentFrame);
+            animatedObject.rotation.y = interpolateValue(prevRot.y, nextRot.y, prevRot.frame, nextRot.frame, currentFrame);
+            animatedObject.rotation.z = interpolateValue(prevRot.z, nextRot.z, prevRot.frame, nextRot.frame, currentFrame);
+        }
 
-    if (prevRot && nextRot) {
-        selectedObject.rotation.x = interpolateValue(prevRot.x, nextRot.x, prevRot.frame, nextRot.frame, currentFrame);
-        selectedObject.rotation.y = interpolateValue(prevRot.y, nextRot.y, prevRot.frame, nextRot.frame, currentFrame);
-        selectedObject.rotation.z = interpolateValue(prevRot.z, nextRot.z, prevRot.frame, nextRot.frame, currentFrame);
-    }
-
-    if (prevScale && nextScale) {
-        selectedObject.scale.x = interpolateValue(prevScale.x, nextScale.x, prevScale.frame, nextScale.frame, currentFrame);
-        selectedObject.scale.y = interpolateValue(prevScale.y, nextScale.y, prevScale.frame, nextScale.frame, currentFrame);
-        selectedObject.scale.z = interpolateValue(prevScale.z, nextScale.z, prevScale.frame, nextScale.frame, currentFrame);
+        const { prevKeyframe: prevScale, nextKeyframe: nextScale } = findSurroundingKeyframes(scaleKeyframes, currentFrame);
+        if (prevScale && nextScale) {
+            animatedObject.scale.x = interpolateValue(prevScale.x, nextScale.x, prevScale.frame, nextScale.frame, currentFrame);
+            animatedObject.scale.y = interpolateValue(prevScale.y, nextScale.y, prevScale.frame, nextScale.frame, currentFrame);
+            animatedObject.scale.z = interpolateValue(prevScale.z, nextScale.z, prevScale.frame, nextScale.frame, currentFrame);
+        }
     }
 }
+
 function getCurrentAnimatedObjects(frame) {
     const animatedObjects = [];
 
@@ -368,10 +423,15 @@ function animate() {
             currentFrame++;
 
             updateObjectTransformations(currentFrame);
+
             updateTimeline();
         } else {
-            currentFrame = 0;
-            isAnimating = false;
+            if (isLooping) {
+                currentFrame = 0;
+            } else {
+                currentFrame = 0;
+                isAnimating = false;
+            }
         }
     }
 
