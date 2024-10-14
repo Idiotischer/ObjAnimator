@@ -26,6 +26,7 @@ function init() {
     const light = new THREE.AmbientLight(0x404040);
     scene.add(light);
 
+
     const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
     directionalLight.position.set(1, 1, 1).normalize();
     scene.add(directionalLight);
@@ -145,29 +146,43 @@ function createAnimationControls() {
     controlsDiv.style.zIndex = '9999';
     document.body.appendChild(controlsDiv);
 
-    const playButton = document.createElement('button');
-    playButton.innerText = 'Play Animation';
-    playButton.onclick = () => { isAnimating = true; };
 
-    const stopButton = document.createElement('button');
-    stopButton.innerText = 'Stop Animation';
-    stopButton.onclick = () => { isAnimating = false; };
+    function createIconButton(iconSrc, title, onClick) {
+        const button = document.createElement('button');
+        button.style.background = 'none';
+        button.style.border = 'none';
+        button.style.padding = '0';
+        button.style.cursor = 'pointer';
+        button.title = title;
 
-    const nextFrameButton = document.createElement('button');
-    nextFrameButton.innerText = 'Next Frame';
-    nextFrameButton.onclick = () => {
+        const icon = document.createElement('img');
+        icon.src = iconSrc;
+        icon.style.width = '24px';
+        icon.style.height = '24px';
+
+        button.appendChild(icon);
+        button.onclick = onClick;
+
+
+        button.onmouseover = () => icon.style.opacity = '0.7';
+        button.onmouseout = () => icon.style.opacity = '1';
+
+        return button;
+    }
+
+    const playButton = createIconButton('play.png', 'Play Animation', () => { isAnimating = true; });
+    const stopButton = createIconButton('stop.png', 'Stop Animation', () => { isAnimating = false; });
+    const nextFrameButton = createIconButton('next.png', 'Next Frame', () => {
         if (currentFrame < totalFrames) {
             currentFrame++;
-
             updateTimeline();
         }
-    };
+    });
 
     controlsDiv.appendChild(playButton);
     controlsDiv.appendChild(stopButton);
     controlsDiv.appendChild(nextFrameButton);
 }
-
 
 function updateMaterialMode() {
     scene.traverse(function (child) {
@@ -256,7 +271,8 @@ function saveKeyframe(object) {
         frame: currentFrame,
         position: { x: object.position.x, y: object.position.y, z: object.position.z },
         rotation: { x: object.rotation.x, y: object.rotation.y, z: object.rotation.z },
-        scale: { x: object.scale.x, y: object.scale.y, z: object.scale.z }
+        scale: { x: object.scale.x, y: object.scale.y, z: object.scale.z },
+        object: selectedObject
     };
 
     console.log("Saving keyframe for", object.name, keyframe);
@@ -296,6 +312,7 @@ function updateObjectTransformations(currentFrame) {
     const positionKeyframes = animationData[selectedObject.name]?.position || [];
     const rotationKeyframes = animationData[selectedObject.name]?.rotation || [];
     const scaleKeyframes = animationData[selectedObject.name]?.scale || [];
+    const obj = animationData[selectedObject.name]?.object || [];
 
     const { prevKeyframe: prevPos, nextKeyframe: nextPos } = findSurroundingKeyframes(positionKeyframes, currentFrame);
     const { prevKeyframe: prevRot, nextKeyframe: nextRot } = findSurroundingKeyframes(rotationKeyframes, currentFrame);
@@ -319,24 +336,48 @@ function updateObjectTransformations(currentFrame) {
         selectedObject.scale.z = interpolateValue(prevScale.z, nextScale.z, prevScale.frame, nextScale.frame, currentFrame);
     }
 }
+function getCurrentAnimatedObjects(frame) {
+    const animatedObjects = [];
+
+    for (let objectName in animationData) {
+        const positionKeyframes = animationData[objectName]?.position || [];
+        const rotationKeyframes = animationData[objectName]?.rotation || [];
+        const scaleKeyframes = animationData[objectName]?.scale || [];
+
+        const hasPosition = positionKeyframes.some(kf => kf.frame === frame);
+        const hasRotation = rotationKeyframes.some(kf => kf.frame === frame);
+        const hasScale = scaleKeyframes.some(kf => kf.frame === frame);
+
+        if (hasPosition || hasRotation || hasScale) {
+            const object = scene.getObjectByName(objectName);
+            if (object) {
+                animatedObjects.push(object);
+            }
+        }
+    }
+
+    return animatedObjects;
+}
 
 function animate() {
     requestAnimationFrame(animate);
     controls.update();
 
     if (isAnimating) {
-
         if (currentFrame < totalFrames) {
-            updateObjectTransformations(currentFrame);
             currentFrame++;
+
+            updateObjectTransformations(currentFrame);
+            updateTimeline();
         } else {
             currentFrame = 0;
+            isAnimating = false;
         }
-        updateTimeline();
     }
 
     renderer.render(scene, camera);
 }
+
 function findSurroundingKeyframes(keyframes, currentFrame) {
     let prevKeyframe = null;
     let nextKeyframe = null;
