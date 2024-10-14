@@ -46,11 +46,11 @@ function init() {
     dropArea.style.height = '100px';
     dropArea.style.border = '2px dashed #ccc';
     dropArea.style.display = 'flex';
-    dropArea.style.alignItems = 'center'; // Center vertically
-    dropArea.style.justifyContent = 'center'; // Center horizontally
+    dropArea.style.alignItems = 'center';
+    dropArea.style.justifyContent = 'center';
     dropArea.style.color = '#666';
-    dropArea.style.fontSize = '16px'; // Optional: Adjust font size for better visibility
-    dropArea.style.textAlign = 'center'; // Center text alignment
+    dropArea.style.fontSize = '16px';
+    dropArea.style.textAlign = 'center';
     dropArea.innerText = 'Drop your .obj and .mtl files here';
     document.body.appendChild(dropArea);
 
