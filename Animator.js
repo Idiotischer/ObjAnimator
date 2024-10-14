@@ -284,33 +284,40 @@ function updateTimeline() {
     timelineContext.fillRect(currentX - 2, timelineCanvas.height / 2 - 10, 4, 20);
 }
 
-
 const moveSpeed = 0.1;
 
 let targetPosition = new THREE.Vector3();
 let targetRotation = new THREE.Vector3();
 let targetScale = new THREE.Vector3();
 
-function updateObjectTransformations(frame) {
-    const position = getPositionData(frame);
-    const rotation = getRotationData(frame);
-    const scale = getScaleData(frame);
+function updateObjectTransformations(currentFrame) {
+    if (!selectedObject) return;
 
-    if (position) {
-        targetPosition.set(position.x, position.y, position.z);
-    }
-    if (rotation) {
-        targetRotation.set(rotation.x, rotation.y, rotation.z);
-    }
-    if (scale) {
-        targetScale.set(scale.x, scale.y, scale.z);
+    const positionKeyframes = animationData[selectedObject.name]?.position || [];
+    const rotationKeyframes = animationData[selectedObject.name]?.rotation || [];
+    const scaleKeyframes = animationData[selectedObject.name]?.scale || [];
+
+    const { prevKeyframe: prevPos, nextKeyframe: nextPos } = findSurroundingKeyframes(positionKeyframes, currentFrame);
+    const { prevKeyframe: prevRot, nextKeyframe: nextRot } = findSurroundingKeyframes(rotationKeyframes, currentFrame);
+    const { prevKeyframe: prevScale, nextKeyframe: nextScale } = findSurroundingKeyframes(scaleKeyframes, currentFrame);
+
+    if (prevPos && nextPos) {
+        selectedObject.position.x = interpolateValue(prevPos.x, nextPos.x, prevPos.frame, nextPos.frame, currentFrame);
+        selectedObject.position.y = interpolateValue(prevPos.y, nextPos.y, prevPos.frame, nextPos.frame, currentFrame);
+        selectedObject.position.z = interpolateValue(prevPos.z, nextPos.z, prevPos.frame, nextPos.frame, currentFrame);
     }
 
-    selectedObject.position.lerp(targetPosition, moveSpeed);
-    selectedObject.rotation.x += (targetRotation.x - selectedObject.rotation.x) * moveSpeed;
-    selectedObject.rotation.y += (targetRotation.y - selectedObject.rotation.y) * moveSpeed;
-    selectedObject.rotation.z += (targetRotation.z - selectedObject.rotation.z) * moveSpeed;
-    selectedObject.scale.lerp(targetScale, moveSpeed);
+    if (prevRot && nextRot) {
+        selectedObject.rotation.x = interpolateValue(prevRot.x, nextRot.x, prevRot.frame, nextRot.frame, currentFrame);
+        selectedObject.rotation.y = interpolateValue(prevRot.y, nextRot.y, prevRot.frame, nextRot.frame, currentFrame);
+        selectedObject.rotation.z = interpolateValue(prevRot.z, nextRot.z, prevRot.frame, nextRot.frame, currentFrame);
+    }
+
+    if (prevScale && nextScale) {
+        selectedObject.scale.x = interpolateValue(prevScale.x, nextScale.x, prevScale.frame, nextScale.frame, currentFrame);
+        selectedObject.scale.y = interpolateValue(prevScale.y, nextScale.y, prevScale.frame, nextScale.frame, currentFrame);
+        selectedObject.scale.z = interpolateValue(prevScale.z, nextScale.z, prevScale.frame, nextScale.frame, currentFrame);
+    }
 }
 
 function animate() {
@@ -329,6 +336,31 @@ function animate() {
     }
 
     renderer.render(scene, camera);
+}
+function findSurroundingKeyframes(keyframes, currentFrame) {
+    let prevKeyframe = null;
+    let nextKeyframe = null;
+
+    for (let i = 0; i < keyframes.length; i++) {
+        if (keyframes[i].frame <= currentFrame) {
+            prevKeyframe = keyframes[i];
+        }
+        if (keyframes[i].frame > currentFrame) {
+            nextKeyframe = keyframes[i];
+            break;
+        }
+    }
+
+    return { prevKeyframe, nextKeyframe };
+}
+
+function interpolateValue(prevValue, nextValue, prevFrame, nextFrame, currentFrame) {
+    const alpha = (currentFrame - prevFrame) / (nextFrame - prevFrame);
+    return lerp(prevValue, nextValue, alpha);
+}
+
+function lerp(start, end, alpha) {
+    return start + (end - start) * alpha;
 }
 
 function getPositionData(frame) {
