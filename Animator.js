@@ -26,6 +26,7 @@ function init() {
     const light = new THREE.AmbientLight(0x404040);
     scene.add(light);
 
+
     const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
     directionalLight.position.set(1, 1, 1).normalize();
     scene.add(directionalLight);
@@ -145,29 +146,43 @@ function createAnimationControls() {
     controlsDiv.style.zIndex = '9999';
     document.body.appendChild(controlsDiv);
 
-    const playButton = document.createElement('button');
-    playButton.innerText = 'Play Animation';
-    playButton.onclick = () => { isAnimating = true; };
 
-    const stopButton = document.createElement('button');
-    stopButton.innerText = 'Stop Animation';
-    stopButton.onclick = () => { isAnimating = false; };
+    function createIconButton(iconSrc, title, onClick) {
+        const button = document.createElement('button');
+        button.style.background = 'none';
+        button.style.border = 'none';
+        button.style.padding = '0';
+        button.style.cursor = 'pointer';
+        button.title = title;
 
-    const nextFrameButton = document.createElement('button');
-    nextFrameButton.innerText = 'Next Frame';
-    nextFrameButton.onclick = () => {
+        const icon = document.createElement('img');
+        icon.src = iconSrc;
+        icon.style.width = '24px';
+        icon.style.height = '24px';
+
+        button.appendChild(icon);
+        button.onclick = onClick;
+
+
+        button.onmouseover = () => icon.style.opacity = '0.7';
+        button.onmouseout = () => icon.style.opacity = '1';
+
+        return button;
+    }
+
+    const playButton = createIconButton('play.png', 'Play Animation', () => { isAnimating = true; });
+    const stopButton = createIconButton('stop.png', 'Stop Animation', () => { isAnimating = false; });
+    const nextFrameButton = createIconButton('next.png', 'Next Frame', () => {
         if (currentFrame < totalFrames) {
             currentFrame++;
-
             updateTimeline();
         }
-    };
+    });
 
     controlsDiv.appendChild(playButton);
     controlsDiv.appendChild(stopButton);
     controlsDiv.appendChild(nextFrameButton);
 }
-
 
 function updateMaterialMode() {
     scene.traverse(function (child) {
@@ -256,7 +271,8 @@ function saveKeyframe(object) {
         frame: currentFrame,
         position: { x: object.position.x, y: object.position.y, z: object.position.z },
         rotation: { x: object.rotation.x, y: object.rotation.y, z: object.rotation.z },
-        scale: { x: object.scale.x, y: object.scale.y, z: object.scale.z }
+        scale: { x: object.scale.x, y: object.scale.y, z: object.scale.z },
+        object: selectedObject
     };
 
     console.log("Saving keyframe for", object.name, keyframe);
@@ -284,33 +300,63 @@ function updateTimeline() {
     timelineContext.fillRect(currentX - 2, timelineCanvas.height / 2 - 10, 4, 20);
 }
 
-
 const moveSpeed = 0.1;
 
 let targetPosition = new THREE.Vector3();
 let targetRotation = new THREE.Vector3();
 let targetScale = new THREE.Vector3();
 
-function updateObjectTransformations(frame) {
-    const position = getPositionData(frame);
-    const rotation = getRotationData(frame);
-    const scale = getScaleData(frame);
+function updateObjectTransformations(currentFrame) {
+    if (!selectedObject) return;
 
-    if (position) {
-        targetPosition.set(position.x, position.y, position.z);
-    }
-    if (rotation) {
-        targetRotation.set(rotation.x, rotation.y, rotation.z);
-    }
-    if (scale) {
-        targetScale.set(scale.x, scale.y, scale.z);
+    const positionKeyframes = animationData[selectedObject.name]?.position || [];
+    const rotationKeyframes = animationData[selectedObject.name]?.rotation || [];
+    const scaleKeyframes = animationData[selectedObject.name]?.scale || [];
+    const obj = animationData[selectedObject.name]?.object || [];
+
+    const { prevKeyframe: prevPos, nextKeyframe: nextPos } = findSurroundingKeyframes(positionKeyframes, currentFrame);
+    const { prevKeyframe: prevRot, nextKeyframe: nextRot } = findSurroundingKeyframes(rotationKeyframes, currentFrame);
+    const { prevKeyframe: prevScale, nextKeyframe: nextScale } = findSurroundingKeyframes(scaleKeyframes, currentFrame);
+
+    if (prevPos && nextPos) {
+        selectedObject.position.x = interpolateValue(prevPos.x, nextPos.x, prevPos.frame, nextPos.frame, currentFrame);
+        selectedObject.position.y = interpolateValue(prevPos.y, nextPos.y, prevPos.frame, nextPos.frame, currentFrame);
+        selectedObject.position.z = interpolateValue(prevPos.z, nextPos.z, prevPos.frame, nextPos.frame, currentFrame);
     }
 
-    selectedObject.position.lerp(targetPosition, moveSpeed);
-    selectedObject.rotation.x += (targetRotation.x - selectedObject.rotation.x) * moveSpeed;
-    selectedObject.rotation.y += (targetRotation.y - selectedObject.rotation.y) * moveSpeed;
-    selectedObject.rotation.z += (targetRotation.z - selectedObject.rotation.z) * moveSpeed;
-    selectedObject.scale.lerp(targetScale, moveSpeed);
+    if (prevRot && nextRot) {
+        selectedObject.rotation.x = interpolateValue(prevRot.x, nextRot.x, prevRot.frame, nextRot.frame, currentFrame);
+        selectedObject.rotation.y = interpolateValue(prevRot.y, nextRot.y, prevRot.frame, nextRot.frame, currentFrame);
+        selectedObject.rotation.z = interpolateValue(prevRot.z, nextRot.z, prevRot.frame, nextRot.frame, currentFrame);
+    }
+
+    if (prevScale && nextScale) {
+        selectedObject.scale.x = interpolateValue(prevScale.x, nextScale.x, prevScale.frame, nextScale.frame, currentFrame);
+        selectedObject.scale.y = interpolateValue(prevScale.y, nextScale.y, prevScale.frame, nextScale.frame, currentFrame);
+        selectedObject.scale.z = interpolateValue(prevScale.z, nextScale.z, prevScale.frame, nextScale.frame, currentFrame);
+    }
+}
+function getCurrentAnimatedObjects(frame) {
+    const animatedObjects = [];
+
+    for (let objectName in animationData) {
+        const positionKeyframes = animationData[objectName]?.position || [];
+        const rotationKeyframes = animationData[objectName]?.rotation || [];
+        const scaleKeyframes = animationData[objectName]?.scale || [];
+
+        const hasPosition = positionKeyframes.some(kf => kf.frame === frame);
+        const hasRotation = rotationKeyframes.some(kf => kf.frame === frame);
+        const hasScale = scaleKeyframes.some(kf => kf.frame === frame);
+
+        if (hasPosition || hasRotation || hasScale) {
+            const object = scene.getObjectByName(objectName);
+            if (object) {
+                animatedObjects.push(object);
+            }
+        }
+    }
+
+    return animatedObjects;
 }
 
 function animate() {
@@ -318,17 +364,44 @@ function animate() {
     controls.update();
 
     if (isAnimating) {
-
         if (currentFrame < totalFrames) {
-            updateObjectTransformations(currentFrame);
             currentFrame++;
+
+            updateObjectTransformations(currentFrame);
+            updateTimeline();
         } else {
             currentFrame = 0;
+            isAnimating = false;
         }
-        updateTimeline();
     }
 
     renderer.render(scene, camera);
+}
+
+function findSurroundingKeyframes(keyframes, currentFrame) {
+    let prevKeyframe = null;
+    let nextKeyframe = null;
+
+    for (let i = 0; i < keyframes.length; i++) {
+        if (keyframes[i].frame <= currentFrame) {
+            prevKeyframe = keyframes[i];
+        }
+        if (keyframes[i].frame > currentFrame) {
+            nextKeyframe = keyframes[i];
+            break;
+        }
+    }
+
+    return { prevKeyframe, nextKeyframe };
+}
+
+function interpolateValue(prevValue, nextValue, prevFrame, nextFrame, currentFrame) {
+    const alpha = (currentFrame - prevFrame) / (nextFrame - prevFrame);
+    return lerp(prevValue, nextValue, alpha);
+}
+
+function lerp(start, end, alpha) {
+    return start + (end - start) * alpha;
 }
 
 function getPositionData(frame) {
