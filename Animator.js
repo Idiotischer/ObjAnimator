@@ -203,28 +203,28 @@ function createAnimationControls() {
 }
 
 function exportAnimation() {
-    if (!selectedObject) {
-        alert('Please select an object to export.');
-        return;
+    const animationExportData = {};
+
+    for (const objectName in animationData) {
+        const objectAnimation = animationData[objectName];
+
+        animationExportData[objectName] = {
+            position: objectAnimation.position,
+            rotation: objectAnimation.rotation,
+            scale: objectAnimation.scale
+        };
     }
 
-    const animationJson = {
-        animationData: animationData,
-        totalFrames: totalFrames,
-    };
+    const animationJSON = JSON.stringify(animationExportData, null, 2);
 
-    const jsonStr = JSON.stringify(animationJson, null, 2);
-    const blob = new Blob([jsonStr], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
+    const blob = new Blob([animationJSON], { type: 'application/json' });
 
     const link = document.createElement('a');
-    link.href = url;
-    link.download = 'animation.json';
-    document.body.appendChild(link);
+    link.href = URL.createObjectURL(blob);
+    link.download = 'animationData.json';
     link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
 }
+
 
 function updateMaterialMode() {
     scene.traverse(function (child) {
@@ -365,28 +365,40 @@ function updateObjectTransformations(currentFrame) {
         if (!animatedObject) continue;
 
         const positionKeyframes = animationData[objectName]?.position || [];
-        const rotationKeyframes = animationData[objectName]?.rotation || [];
-        const scaleKeyframes = animationData[objectName]?.scale || [];
-
         const { prevKeyframe: prevPos, nextKeyframe: nextPos } = findSurroundingKeyframes(positionKeyframes, currentFrame);
+
         if (prevPos && nextPos) {
-            animatedObject.position.x = interpolateValue(prevPos.x, nextPos.x, prevPos.frame, nextPos.frame, currentFrame);
-            animatedObject.position.y = interpolateValue(prevPos.y, nextPos.y, prevPos.frame, nextPos.frame, currentFrame);
-            animatedObject.position.z = interpolateValue(prevPos.z, nextPos.z, prevPos.frame, nextPos.frame, currentFrame);
+            const t = (currentFrame - prevPos.frame) / (nextPos.frame - prevPos.frame);
+            animatedObject.position.lerpVectors(
+                new THREE.Vector3(prevPos.x, prevPos.y, prevPos.z),
+                new THREE.Vector3(nextPos.x, nextPos.y, nextPos.z),
+                t
+            );
         }
 
+        const rotationKeyframes = animationData[objectName]?.rotation || [];
         const { prevKeyframe: prevRot, nextKeyframe: nextRot } = findSurroundingKeyframes(rotationKeyframes, currentFrame);
+
         if (prevRot && nextRot) {
-            animatedObject.rotation.x = interpolateValue(prevRot.x, nextRot.x, prevRot.frame, nextRot.frame, currentFrame);
-            animatedObject.rotation.y = interpolateValue(prevRot.y, nextRot.y, prevRot.frame, nextRot.frame, currentFrame);
-            animatedObject.rotation.z = interpolateValue(prevRot.z, nextRot.z, prevRot.frame, nextRot.frame, currentFrame);
+            const t = (currentFrame - prevRot.frame) / (nextRot.frame - prevRot.frame);
+            const prevEuler = new THREE.Euler(prevRot.x, prevRot.y, prevRot.z);
+            const nextEuler = new THREE.Euler(nextRot.x, nextRot.y, nextRot.z);
+            const prevQuaternion = new THREE.Quaternion().setFromEuler(prevEuler);
+            const nextQuaternion = new THREE.Quaternion().setFromEuler(nextEuler);
+
+            animatedObject.quaternion.slerpQuaternions(prevQuaternion, nextQuaternion, t);
         }
 
+        const scaleKeyframes = animationData[objectName]?.scale || [];
         const { prevKeyframe: prevScale, nextKeyframe: nextScale } = findSurroundingKeyframes(scaleKeyframes, currentFrame);
+
         if (prevScale && nextScale) {
-            animatedObject.scale.x = interpolateValue(prevScale.x, nextScale.x, prevScale.frame, nextScale.frame, currentFrame);
-            animatedObject.scale.y = interpolateValue(prevScale.y, nextScale.y, prevScale.frame, nextScale.frame, currentFrame);
-            animatedObject.scale.z = interpolateValue(prevScale.z, nextScale.z, prevScale.frame, nextScale.frame, currentFrame);
+            const t = (currentFrame - prevScale.frame) / (nextScale.frame - prevScale.frame);
+            animatedObject.scale.lerpVectors(
+                new THREE.Vector3(prevScale.x, prevScale.y, prevScale.z),
+                new THREE.Vector3(nextScale.x, nextScale.y, nextScale.z),
+                t
+            );
         }
     }
 }
