@@ -7,7 +7,7 @@ let totalFrames = 180;
 let isAnimating = false;
 let isLooping = false;
 
-const materialsMap = new Map();
+const materials = new Map();
 
 const timelineCanvas = document.createElement('canvas');
 const timelineContext = timelineCanvas.getContext('2d');
@@ -245,8 +245,8 @@ function exportAll() {
 function updateMaterialMode() {
     scene.traverse(function (child) {
         if (child.isMesh) {
-            if (!materialsMap.has(child.name)) {
-                materialsMap.set(child.name, child.material.clone());
+            if (!materials.has(child.name)) {
+                materials.set(child.name, child.material.clone());
             }
 
             switch (materialMode) {
@@ -257,7 +257,7 @@ function updateMaterialMode() {
                     break;
 
                 case 'shaded':
-                    child.material = materialsMap.get(child.name).clone();
+                    child.material = materials.get(child.name).clone();
                     break;
             }
 
