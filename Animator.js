@@ -1,6 +1,6 @@
 let scene, camera, renderer, controls;
 let objModel, selectedObject;
-let animationData = {};
+let animations = {};
 let materialMode = 'shaded';
 let currentFrame = 0;
 let totalFrames = 180;
@@ -94,17 +94,17 @@ function init() {
         if (intersects.length > 0) {
             selectedObject = intersects[0].object;
             console.log("Selected object:", selectedObject.name);
-            updateGUIForSelectedObject(selectedObject);
+            updateGUI(selectedObject);
         }
     });
 
-    createMaterialModeBar();
+    createMaterialBar();
     createAnimationControls();
     animate();
     updateTimeline();
 }
 
-function createMaterialModeBar() {
+function createMaterialBar() {
     const materialBar = document.createElement('div');
     materialBar.id = 'materialBar';
     materialBar.style.position = 'fixed';
@@ -169,44 +169,56 @@ function createAnimationControls() {
         return button;
     }
 
-    const playButton = createIconButton('play.png', 'Play Animation', () => { isAnimating = true; });
-    const stopButton = createIconButton('stop.png', 'Stop Animation', () => { isAnimating = false; });
-    const nextFrameButton = createIconButton('next.png', 'Next Frame', () => {
+
+    let isPlaying = false;
+    const playToggleButton = createIconButton('play.png', 'Play/Stop Animation', () => {
+        isPlaying = !isPlaying;
+        isAnimating = isPlaying;
+        playToggleButton.firstChild.src = isPlaying ? 'stop.png' : 'play.png';
+    });
+
+    const nextButton = createIconButton('next.png', 'Next Frame', () => {
         if (currentFrame < totalFrames) {
             currentFrame++;
+            updateObjectTransformation(currentFrame);
             updateTimeline();
+        } else {
+            currentFrame = 0;
         }
     });
 
-    const exportButton = createIconButton('download.png', 'Export Animation', exportAnimation);
+    const prevButton = createIconButton('previous.png', 'Previous Frame', () => {
+        if (currentFrame > 0) {
+            currentFrame--;
+            updateObjectTransformation(currentFrame);
+            updateTimeline();
+        } else {
+            currentFrame = totalFrames;
+        }
+    });
 
-    controlsDiv.appendChild(playButton);
-    controlsDiv.appendChild(stopButton);
-    controlsDiv.appendChild(nextFrameButton);
-    controlsDiv.appendChild(exportButton);
+    const exportButton = createIconButton('download.png', 'Export Animation', exportAll);
 
     const loopCheckbox = document.createElement('input');
     loopCheckbox.type = 'checkbox';
-    loopCheckbox.id = 'loopCheckbox';
+    loopCheckbox.id = 'loopLabel';
     loopCheckbox.style.marginLeft = '10px';
     loopCheckbox.addEventListener('change', (event) => {
         isLooping = event.target.checked;
     });
 
-    const loopLabel = document.createElement('label');
-    loopLabel.htmlFor = 'loopCheckbox';
-    loopLabel.innerText = 'Loop';
-    loopLabel.style.marginLeft = '5px';
-
+    controlsDiv.appendChild(prevButton);
+    controlsDiv.appendChild(playToggleButton);
+    controlsDiv.appendChild(nextButton);
     controlsDiv.appendChild(loopCheckbox);
-    controlsDiv.appendChild(loopLabel);
+    controlsDiv.appendChild(exportButton);
 }
 
 function exportAnimation() {
     const animationExportData = {};
 
-    for (const objectName in animationData) {
-        const objectAnimation = animationData[objectName];
+    for (const objectName in animations) {
+        const objectAnimation = animations[objectName];
 
         animationExportData[objectName] = {
             position: objectAnimation.position,
@@ -221,10 +233,14 @@ function exportAnimation() {
 
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
-    link.download = 'animationData.json';
+    link.download = 'animations.json';
     link.click();
 }
 
+function exportAll() {
+    exportAnimation();
+    downloadOBJ();
+}
 
 function updateMaterialMode() {
     scene.traverse(function (child) {
@@ -249,6 +265,19 @@ function updateMaterialMode() {
         }
     });
 }
+
+function downloadOBJ() {
+    const exporter = OBJExporter();
+
+    const result = exporter.parse(objModel);
+
+    const blob = new Blob([result], { type: 'text/plain' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `${objModel.name || 'scene'}.obj`;
+    link.click();
+}
+
 
 function loadModelWithMaterial() {
     const mtlLoader = new THREE.MTLLoader();
@@ -279,7 +308,7 @@ function loadModelWithMaterial() {
                     child.material.map.minFilter = THREE.NearestFilter;
                     child.material.map.magFilter = THREE.NearestFilter;
 
-                    animationData[child.name] = { position: [], rotation: [], scale: [] };
+                    animations[child.name] = { position: [], rotation: [], scale: [] };
                 }
             });
 
@@ -288,7 +317,7 @@ function loadModelWithMaterial() {
     });
 }
 
-function updateGUIForSelectedObject(object) {
+function updateGUI(object) {
     const gui = new dat.GUI({ autoPlace: false });
     document.getElementById('gui').innerHTML = '';
     document.getElementById('gui').appendChild(gui.domElement);
@@ -297,19 +326,46 @@ function updateGUIForSelectedObject(object) {
     const exportFolder = gui.addFolder('Export');
 
     const position = { x: object.position.x, y: object.position.y, z: object.position.z };
-    objectFolder.add(position, 'x', -10, 10).onChange((val) => object.position.x = val);
-    objectFolder.add(position, 'y', -10, 10).onChange((val) => object.position.y = val);
-    objectFolder.add(position, 'z', -10, 10).onChange((val) => object.position.z = val);
+    objectFolder.add(position, 'x', -10, 10).step(0.01).onChange((val) => {
+        object.position.x = val;
+        updateTimeline();
+    });
+    objectFolder.add(position, 'y', -10, 10).step(0.01).onChange((val) => {
+        object.position.y = val;
+        updateTimeline();
+    });
+    objectFolder.add(position, 'z', -10, 10).step(0.01).onChange((val) => {
+        object.position.z = val;
+        updateTimeline();
+    });
 
     const rotation = { x: object.rotation.x, y: object.rotation.y, z: object.rotation.z };
-    objectFolder.add(rotation, 'x', -Math.PI, Math.PI).onChange((val) => object.rotation.x = val);
-    objectFolder.add(rotation, 'y', -Math.PI, Math.PI).onChange((val) => object.rotation.y = val);
-    objectFolder.add(rotation, 'z', -Math.PI, Math.PI).onChange((val) => object.rotation.z = val);
+    objectFolder.add(rotation, 'x', -Math.PI, Math.PI).step(0.01).onChange((val) => {
+        object.rotation.x = val;
+        updateTimeline();
+    });
+    objectFolder.add(rotation, 'y', -Math.PI, Math.PI).step(0.01).onChange((val) => {
+        object.rotation.y = val;
+        updateTimeline();
+    });
+    objectFolder.add(rotation, 'z', -Math.PI, Math.PI).step(0.01).onChange((val) => {
+        object.rotation.z = val;
+        updateTimeline();
+    });
 
     const scale = { x: object.scale.x, y: object.scale.y, z: object.scale.z };
-    objectFolder.add(scale, 'x', 0.1, 5).onChange((val) => object.scale.x = val);
-    objectFolder.add(scale, 'y', 0.1, 5).onChange((val) => object.scale.y = val);
-    objectFolder.add(scale, 'z', 0.1, 5).onChange((val) => object.scale.z = val);
+    objectFolder.add(scale, 'x', 0.1, 5).step(0.01).onChange((val) => {
+        object.scale.x = val;
+        updateTimeline();
+    });
+    objectFolder.add(scale, 'y', 0.1, 5).step(0.01).onChange((val) => {
+        object.scale.y = val;
+        updateTimeline();
+    });
+    objectFolder.add(scale, 'z', 0.1, 5).step(0.01).onChange((val) => {
+        object.scale.z = val;
+        updateTimeline();
+    });
 
     objectFolder.add({ save: () => saveKeyframe(object) }, 'save');
 
@@ -330,9 +386,9 @@ function saveKeyframe(object) {
 
     console.log("Saving keyframe for", object.name, keyframe);
 
-    animationData[object.name].position.push({ frame: keyframe.frame, ...keyframe.position });
-    animationData[object.name].rotation.push({ frame: keyframe.frame, ...keyframe.rotation });
-    animationData[object.name].scale.push({ frame: keyframe.frame, ...keyframe.scale });
+    animations[object.name].position.push({ frame: keyframe.frame, ...keyframe.position });
+    animations[object.name].rotation.push({ frame: keyframe.frame, ...keyframe.rotation });
+    animations[object.name].scale.push({ frame: keyframe.frame, ...keyframe.scale });
 }
 
 function updateTimeline() {
@@ -340,7 +396,7 @@ function updateTimeline() {
     timelineContext.fillStyle = '#22A7F0';
     timelineContext.fillRect(0, 0, timelineCanvas.width, timelineCanvas.height);
 
-    const keyframes = animationData[selectedObject?.name]?.position || [];
+    const keyframes = animations[selectedObject?.name]?.position || [];
 
     keyframes.forEach((kf) => {
         const x = (kf.frame / totalFrames) * timelineCanvas.width;
@@ -359,13 +415,13 @@ let targetPosition = new THREE.Vector3();
 let targetRotation = new THREE.Vector3();
 let targetScale = new THREE.Vector3();
 
-function updateObjectTransformations(currentFrame) {
-    for (const objectName in animationData) {
+function updateObjectTransformation(currentFrame) {
+    for (const objectName in animations) {
         const animatedObject = scene.getObjectByName(objectName);
         if (!animatedObject) continue;
 
-        const positionKeyframes = animationData[objectName]?.position || [];
-        const { prevKeyframe: prevPos, nextKeyframe: nextPos } = findSurroundingKeyframes(positionKeyframes, currentFrame);
+        const positionKeyframes = animations[objectName]?.position || [];
+        const { prevKeyframe: prevPos, nextKeyframe: nextPos } = findKeyframes(positionKeyframes, currentFrame);
 
         if (prevPos && nextPos) {
             const t = (currentFrame - prevPos.frame) / (nextPos.frame - prevPos.frame);
@@ -376,8 +432,8 @@ function updateObjectTransformations(currentFrame) {
             );
         }
 
-        const rotationKeyframes = animationData[objectName]?.rotation || [];
-        const { prevKeyframe: prevRot, nextKeyframe: nextRot } = findSurroundingKeyframes(rotationKeyframes, currentFrame);
+        const rotationKeyframes = animations[objectName]?.rotation || [];
+        const { prevKeyframe: prevRot, nextKeyframe: nextRot } = findKeyframes(rotationKeyframes, currentFrame);
 
         if (prevRot && nextRot) {
             const t = (currentFrame - prevRot.frame) / (nextRot.frame - prevRot.frame);
@@ -389,41 +445,17 @@ function updateObjectTransformations(currentFrame) {
             animatedObject.quaternion.slerpQuaternions(prevQuaternion, nextQuaternion, t);
         }
 
-        const scaleKeyframes = animationData[objectName]?.scale || [];
-        const { prevKeyframe: prevScale, nextKeyframe: nextScale } = findSurroundingKeyframes(scaleKeyframes, currentFrame);
+        const scaleKeyframes = animations[objectName]?.scale || [];
+        const { prevKeyframe: prevScale, nextKeyframe: nextScale } = findKeyframes(scaleKeyframes, currentFrame);
 
         if (prevScale && nextScale) {
             const t = (currentFrame - prevScale.frame) / (nextScale.frame - prevScale.frame);
             animatedObject.scale.lerpVectors(
                 new THREE.Vector3(prevScale.x, prevScale.y, prevScale.z),
                 new THREE.Vector3(nextScale.x, nextScale.y, nextScale.z),
-                t
             );
         }
     }
-}
-
-function getCurrentAnimatedObjects(frame) {
-    const animatedObjects = [];
-
-    for (let objectName in animationData) {
-        const positionKeyframes = animationData[objectName]?.position || [];
-        const rotationKeyframes = animationData[objectName]?.rotation || [];
-        const scaleKeyframes = animationData[objectName]?.scale || [];
-
-        const hasPosition = positionKeyframes.some(kf => kf.frame === frame);
-        const hasRotation = rotationKeyframes.some(kf => kf.frame === frame);
-        const hasScale = scaleKeyframes.some(kf => kf.frame === frame);
-
-        if (hasPosition || hasRotation || hasScale) {
-            const object = scene.getObjectByName(objectName);
-            if (object) {
-                animatedObjects.push(object);
-            }
-        }
-    }
-
-    return animatedObjects;
 }
 
 function animate() {
@@ -434,7 +466,7 @@ function animate() {
         if (currentFrame < totalFrames) {
             currentFrame++;
 
-            updateObjectTransformations(currentFrame);
+            updateObjectTransformation(currentFrame);
 
             updateTimeline();
         } else {
@@ -450,7 +482,7 @@ function animate() {
     renderer.render(scene, camera);
 }
 
-function findSurroundingKeyframes(keyframes, currentFrame) {
+function findKeyframes(keyframes, currentFrame) {
     let prevKeyframe = null;
     let nextKeyframe = null;
 
@@ -465,42 +497,6 @@ function findSurroundingKeyframes(keyframes, currentFrame) {
     }
 
     return { prevKeyframe, nextKeyframe };
-}
-
-function interpolateValue(prevValue, nextValue, prevFrame, nextFrame, currentFrame) {
-    const alpha = (currentFrame - prevFrame) / (nextFrame - prevFrame);
-    return lerp(prevValue, nextValue, alpha);
-}
-
-function lerp(start, end, alpha) {
-    return start + (end - start) * alpha;
-}
-
-function getPositionData(frame) {
-    if (!selectedObject) return null;
-
-    const keyframes = animationData[selectedObject.name]?.position || [];
-    const keyframe = keyframes.find(kf => kf.frame === frame);
-
-    return keyframe ? { x: keyframe.x, y: keyframe.y, z: keyframe.z } : null;
-}
-
-function getRotationData(frame) {
-    if (!selectedObject) return null;
-
-    const keyframes = animationData[selectedObject.name]?.rotation || [];
-    const keyframe = keyframes.find(kf => kf.frame === frame);
-
-    return keyframe ? { x: keyframe.x, y: keyframe.y, z: keyframe.z } : null;
-}
-
-function getScaleData(frame) {
-    if (!selectedObject) return null;
-
-    const keyframes = animationData[selectedObject.name]?.scale || [];
-    const keyframe = keyframes.find(kf => kf.frame === frame);
-
-    return keyframe ? { x: keyframe.x, y: keyframe.y, z: keyframe.z } : null;
 }
 
 init();
